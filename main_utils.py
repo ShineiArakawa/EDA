@@ -118,6 +118,7 @@ def parse_option():
     # pointnet checkpoint
     parser.add_argument('--pp_checkpoint', default=None)
     parser.add_argument('--reduce_lr', action='store_true')
+    parser.add_argument('--pred_file', type=str, default=None)
 
     args, _ = parser.parse_known_args()
 

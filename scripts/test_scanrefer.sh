@@ -1,4 +1,4 @@
-DATA_ROOT=/home/shinaraka/Projects/EDA/data
+DATA_ROOT=data
 
 TORCH_DISTRIBUTED_DEBUG=INFO python -m torch.distributed.launch \
     --nproc_per_node 1 --master_port 1111 \
