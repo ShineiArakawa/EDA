@@ -1,10 +1,13 @@
 from loguru import logger
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import plotly.graph_objects as go
+import random
+from tqdm import tqdm
+from operator import itemgetter
 
 import torch
-from src.joint_det_dataset import box2points
 
+from src.joint_det_dataset import box2points
 from visualizer import make_bbox
 
 
@@ -26,6 +29,15 @@ def parse_args():
         "--max-n-data",
         type=int,
         default=10
+    )
+    parser.add_argument(
+        "--rand-sort",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0
     )
     return parser.parse_args()
 
@@ -68,12 +80,26 @@ def main():
         3
     )
 
+    n_data = min(args.max_n_data, len(preds['utterances']))
+    if args.rand_sort:
+        logger.info(f"Sorted data randomly")
+        index = list(range(n_data))
+        random.seed(args.seed)
+        random.shuffle(index)
+        preds['gt_bbox'] = preds['gt_bbox'][index, :]
+        preds['pred_bbox'] = preds['pred_bbox'][index, :, :]
+        preds['ious'] = preds['ious'][index, :]
+        preds['point_cloud'] = preds['point_cloud'][index, :, :]
+        preds['orig_color'] = preds['orig_color'][index, :, :]
+        preds['utterances'] = itemgetter(*index)(preds['utterances'])
+        preds['target_name'] = itemgetter(*index)(preds['target_name'])
+        pass
+
     # Plot
     logger.info(f"Preparing plots ...")
     fig = go.Figure()
 
-    n_data = min(args.max_n_data, len(preds['utterances']))
-    for i_data in range(n_data):
+    for i_data in tqdm(range(n_data), desc="Preparing ..."):
         n_plots_per_data = 0
 
         # Point clouds
@@ -83,7 +109,7 @@ def main():
                 y=preds['point_cloud'][i_data, :, 1],
                 z=preds['point_cloud'][i_data, :, 2],
                 mode='markers',
-                marker=dict(size=1, color=preds['orig_color'][i_data]),
+                marker=dict(size=2, color=preds['orig_color'][i_data]),
                 name=f"Scene",
                 visible=True if i_data == 0 else False
             )
