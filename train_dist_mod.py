@@ -29,7 +29,6 @@ import datetime
 import ipdb
 st = ipdb.set_trace
 
-import numpy as np
 
 class TrainTester(BaseTrainTester):
     """Train/test a language grounder."""
@@ -68,7 +67,7 @@ class TrainTester(BaseTrainTester):
                 butd_cls=args.butd_cls,
                 augment_det=args.augment_det
             )
-        
+
         test_dataset = Joint3DDataset(
             dataset_dict=dataset_dict,
             test_dataset=args.test_dataset,
@@ -108,7 +107,7 @@ class TrainTester(BaseTrainTester):
             contrastive_align_loss=args.use_contrastive_align,
             butd=args.butd or args.butd_gt or args.butd_cls,
             pointnet_ckpt=args.pp_checkpoint,
-            data_path = args.data_root,
+            data_path=args.data_root,
             self_attend=args.self_attend
         )
         return model
@@ -117,15 +116,19 @@ class TrainTester(BaseTrainTester):
     @staticmethod
     def _get_inputs(batch_data):
         return {
-            'point_clouds': batch_data['point_clouds'].float(), # ([B, 50000, 6]) xyz + colour
+            # ([B, 50000, 6]) xyz + colour
+            'point_clouds': batch_data['point_clouds'].float(),
             'text': batch_data['utterances'],                   # list[B]  text
-            "det_boxes": batch_data['all_detected_boxes'],      # ([B, 132, 6]) groupfree detection boxes
-            "det_bbox_label_mask": batch_data['all_detected_bbox_label_mask'],  # ([B, 132]) mask
-            "det_class_ids": batch_data['all_detected_class_ids']   # ([B, 132])  box id
+            # ([B, 132, 6]) groupfree detection boxes
+            "det_boxes": batch_data['all_detected_boxes'],
+            # ([B, 132]) mask
+            "det_bbox_label_mask": batch_data['all_detected_bbox_label_mask'],
+            # ([B, 132])  box id
+            "det_class_ids": batch_data['all_detected_class_ids']
         }
 
-
     # BRIEF only eval one epoch.
+
     @torch.no_grad()
     def evaluate_one_epoch(self, epoch, test_loader,
                            model, criterion, set_criterion, args):
@@ -137,7 +140,7 @@ class TrainTester(BaseTrainTester):
             criterion: a function that returns (loss, end_points)
         """
         # [Option] Object detection evaluation on ScanNet dataset.
-        if args.test_dataset == 'scannet':      
+        if args.test_dataset == 'scannet':
             return self.evaluate_one_epoch_det(
                 epoch, test_loader, model,
                 criterion, set_criterion, args
@@ -162,9 +165,22 @@ class TrainTester(BaseTrainTester):
 
         # NOTE Main eval branch
         test_loader = tqdm(test_loader)
+        
+        predictions = {
+            prefix: {
+                "gt_bbox":[],
+                "pred_bbox":[],
+                "ious":[],
+                "point_cloud":[],
+                "orig_color":[],
+                "utterances":[],
+                "target_name": [],
+            } for prefix in prefixes
+        } if args.preds_file else None
+        
         for batch_idx, batch_data in enumerate(test_loader):
             # note forward and compute loss
-            stat_dict, end_points = self._main_eval_branch(     
+            stat_dict, end_points = self._main_eval_branch(
                 batch_idx, batch_data, test_loader, model, stat_dict,
                 criterion, set_criterion, args
             )
@@ -175,16 +191,30 @@ class TrainTester(BaseTrainTester):
                         continue
 
                     # evaluation
-                    evaluator.evaluate(end_points, prefix)      
+                    outputs_to_return = evaluator.evaluate(end_points, prefix)
+                    
+                    if dist.get_rank() == 0 and predictions:
+                        predictions[prefix]["gt_bbox"].append(outputs_to_return["gt_bbox"].detach().cpu())
+                        predictions[prefix]["pred_bbox"].append(outputs_to_return["pred_bbox"].detach().cpu())
+                        predictions[prefix]["ious"].append(outputs_to_return["ious"].detach().cpu())
+                        predictions[prefix]["point_cloud"].append(batch_data["point_clouds"].detach().cpu())
+                        predictions[prefix]["orig_color"].append(batch_data["og_color"].detach().cpu())
+                        predictions[prefix]["utterances"].append(batch_data["utterances"])
+                        predictions[prefix]["target_name"].append(batch_data["target_name"])
+                        pass
 
         evaluator.synchronize_between_processes()
         if dist.get_rank() == 0:
             if evaluator is not None:
                 # tensorboard eval socre
-                s_25 = evaluator.dets[("last_", 0.25, 1, "bbs")] / max(evaluator.gts[("last_", 0.25, 1, "bbs")], 1)
-                s_50 = evaluator.dets[("last_", 0.5,  1, "bbs")] / max(evaluator.gts[("last_", 0.5,  1, "bbs")], 1)
-                c_25 = evaluator.dets[("last_", 0.25, 1, "bbf")] / max(evaluator.gts[("last_", 0.25, 1, "bbf")], 1)
-                c_50 = evaluator.dets[("last_", 0.5,  1, "bbf")] / max(evaluator.gts[("last_", 0.5,  1, "bbf")], 1)
+                s_25 = evaluator.dets[("last_", 0.25, 1, "bbs")] / \
+                    max(evaluator.gts[("last_", 0.25, 1, "bbs")], 1)
+                s_50 = evaluator.dets[("last_", 0.5,  1, "bbs")] / \
+                    max(evaluator.gts[("last_", 0.5,  1, "bbs")], 1)
+                c_25 = evaluator.dets[("last_", 0.25, 1, "bbf")] / \
+                    max(evaluator.gts[("last_", 0.25, 1, "bbf")], 1)
+                c_50 = evaluator.dets[("last_", 0.5,  1, "bbf")] / \
+                    max(evaluator.gts[("last_", 0.5,  1, "bbf")], 1)
                 self.tensorboard.item["val_score"]["soft_token_0.25"] = s_25
                 self.tensorboard.item["val_score"]["soft_token_0.5"] = s_50
                 self.tensorboard.item["val_score"]["contrastive_0.25"] = c_25
@@ -192,12 +222,34 @@ class TrainTester(BaseTrainTester):
                 self.tensorboard.dump_tensorboard("val_score", epoch)
                 # tensorboard eval loss
                 for key in self.tensorboard.item["val_loss"]:
-                    self.tensorboard.item["val_loss"][key] = stat_dict[key] / len(test_loader)
+                    self.tensorboard.item["val_loss"][key] = stat_dict[key] / \
+                        len(test_loader)
                 self.tensorboard.dump_tensorboard("val_loss", epoch)
 
                 evaluator.print_stats()
+                
+                # Save predictions
+                if predictions:
+                    # Collate
+                    for prefix in predictions.keys():
+                        for data_key in predictions[prefix].keys():
+                            n_data = len(predictions[prefix][data_key])
+                            if n_data == 0:
+                                continue
+                            
+                            if isinstance(predictions[prefix][data_key][0], torch.Tensor):
+                                predictions[prefix][data_key] = torch.cat(predictions[prefix][data_key], dim=0)
+                            elif isinstance(predictions[prefix][data_key][0], list):
+                                predictions[prefix][data_key] = sum(predictions[prefix][data_key], [])
+                            pass
+                        pass
+                    
+                    # Save
+                    preds_file = os.path.abspath(args.preds_file)
+                    os.makedirs(os.path.dirname(preds_file), exist_ok=True)
+                    torch.save(predictions, preds_file)
         return None
-    
+
     # BRIEF Scannet detection evalution
     @torch.no_grad()
     def evaluate_one_epoch_det(self, epoch, test_loader,
@@ -265,15 +317,19 @@ class TrainTester(BaseTrainTester):
             # step score   contrast
             proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
             proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
-            sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+            sem_scores = torch.matmul(
+                proj_queries, proj_tokens.transpose(-1, -2))
             sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
-            sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+            sem_scores = torch.zeros(
+                sem_scores_.size(0), sem_scores_.size(1), 256)
             sem_scores = sem_scores.to(sem_scores_.device)
-            sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+            sem_scores[:, :sem_scores_.size(
+                1), :sem_scores_.size(2)] = sem_scores_
             end_points['last_sem_cls_scores'] = sem_scores  # ([B, 256, 256])
 
             # step
-            sem_cls = torch.zeros_like(end_points['last_sem_cls_scores'])[..., :19] # ([B, 256, 19])
+            sem_cls = torch.zeros_like(
+                end_points['last_sem_cls_scores'])[..., :19]  # ([B, 256, 19])
             for w, t in zip(wordidx, tokenidx):
                 sem_cls[..., w] += end_points['last_sem_cls_scores'][..., t]
             end_points['last_sem_cls_scores'] = sem_cls     # ([B, 256, 19])
@@ -299,7 +355,7 @@ class TrainTester(BaseTrainTester):
                 batch_gt_map_cls_dict[prefix]):
             for ap_calculator in ap_calculator_list:
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)
-        
+
         # Evaluate average precision
         for i, ap_calculator in enumerate(ap_calculator_list):
             metrics_dict = ap_calculator.compute_metrics()
@@ -330,14 +386,15 @@ class TrainTester(BaseTrainTester):
 if __name__ == '__main__':
     # huggingface
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    
-    opt = parse_option()    
-    
-    # distributed 
+
+    opt = parse_option()
+
+    # distributed
     torch.cuda.set_device(opt.local_rank)
     # https://github.com/open-mmlab/mmcv/issues/1969#issuecomment-1304721237
-    torch.distributed.init_process_group(backend='nccl', init_method='env://', timeout=datetime.timedelta(seconds=5400))  
-    
+    torch.distributed.init_process_group(
+        backend='nccl', init_method='env://', timeout=datetime.timedelta(seconds=5400))
+
     # cudnn
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True

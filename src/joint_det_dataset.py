@@ -28,6 +28,7 @@ from transformers import RobertaTokenizerFast
 import wandb
 
 import copy
+import tqdm
 
 from data.model_util_scannet import ScannetDatasetConfig
 from data.scannet_utils import read_label_mapping
@@ -184,7 +185,7 @@ class Joint3DDataset(Dataset):
             ]
 
             # text decoupling
-            Scene_graph_parse(annos)
+            annos = Scene_graph_parse(annos)
 
         return annos
 
@@ -220,7 +221,8 @@ class Joint3DDataset(Dataset):
                 )
             ]
         
-        Scene_graph_parse(annos)
+        annos = Scene_graph_parse(annos)
+
 
         # Add distractor info
         for anno in annos:
@@ -274,7 +276,7 @@ class Joint3DDataset(Dataset):
         ###########################
         # STEP 2. text decoupling #
         ###########################
-        Scene_graph_parse(annos)
+        annos = Scene_graph_parse(annos)
 
         # # NOTE BUTD-DETR unreasonable approach, add GT object name
         # num = 0
@@ -1220,14 +1222,14 @@ def box2points(box):
     x_min, y_min, z_min = (box[:, :3] - (box[:, 3:] / 2)).transpose(1, 0)
     x_max, y_max, z_max = (box[:, :3] + (box[:, 3:] / 2)).transpose(1, 0)
     return np.stack((
-        np.concatenate((x_min[:, None], y_min[:, None], z_min[:, None]), 1),
-        np.concatenate((x_min[:, None], y_max[:, None], z_min[:, None]), 1),
-        np.concatenate((x_max[:, None], y_min[:, None], z_min[:, None]), 1),
-        np.concatenate((x_max[:, None], y_max[:, None], z_min[:, None]), 1),
-        np.concatenate((x_min[:, None], y_min[:, None], z_max[:, None]), 1),
-        np.concatenate((x_min[:, None], y_max[:, None], z_max[:, None]), 1),
-        np.concatenate((x_max[:, None], y_min[:, None], z_max[:, None]), 1),
-        np.concatenate((x_max[:, None], y_max[:, None], z_max[:, None]), 1)
+        np.concatenate((x_min[:, None], y_min[:, None], z_min[:, None]), 1), # 0
+        np.concatenate((x_min[:, None], y_max[:, None], z_min[:, None]), 1), # 1
+        np.concatenate((x_max[:, None], y_min[:, None], z_min[:, None]), 1), # 2
+        np.concatenate((x_max[:, None], y_max[:, None], z_min[:, None]), 1), # 3
+        np.concatenate((x_min[:, None], y_min[:, None], z_max[:, None]), 1), # 4
+        np.concatenate((x_min[:, None], y_max[:, None], z_max[:, None]), 1), # 5
+        np.concatenate((x_max[:, None], y_min[:, None], z_max[:, None]), 1), # 6
+        np.concatenate((x_max[:, None], y_max[:, None], z_max[:, None]), 1)  # 7
     ), axis=1)
 
 
@@ -1307,7 +1309,7 @@ def unpickle_data(file_name, python2_to_3=False):
 #########################
 # BRIEF Text decoupling #
 #########################
-def Scene_graph_parse(annos):
+def Scene_graph_parse_old(annos):
     print('Begin text decoupling......')
     for anno in annos:
         caption = ' '.join(anno['utterance'].replace(',', ' , ').split())
@@ -1399,3 +1401,128 @@ def Scene_graph_parse(annos):
         anno["auxi_entity"] = auxi_entity
     
     print('End text decoupling!')
+    
+    
+#########################
+# BRIEF Text decoupling #
+#########################
+
+def Scene_graph_parse_worker(anno):
+    caption = ' '.join(anno['utterance'].replace(',', ' , ').split())
+
+    # some error or typo in ScanRefer.
+    caption = ' '.join(caption.replace("'m", "am").split())
+    caption = ' '.join(caption.replace("'s", "is").split())
+    caption = ' '.join(caption.replace("2-tiered", "2 - tiered").split())
+    caption = ' '.join(caption.replace("4-drawers", "4 - drawers").split())
+    caption = ' '.join(caption.replace("5-drawer", "5 - drawer").split())
+    caption = ' '.join(caption.replace("8-hole", "8 - hole").split())
+    caption = ' '.join(caption.replace("7-shaped", "7 - shaped").split())
+    caption = ' '.join(caption.replace("2-door", "2 - door").split())
+    caption = ' '.join(caption.replace("3-compartment", "3 - compartment").split())
+    caption = ' '.join(caption.replace("computer/", "computer /").split())
+    caption = ' '.join(caption.replace("3-tier", "3 - tier").split())
+    caption = ' '.join(caption.replace("3-seater", "3 - seater").split())
+    caption = ' '.join(caption.replace("4-seat", "4 - seat").split())
+    caption = ' '.join(caption.replace("theses", "these").split())
+    
+    # some error or typo in NR3D.
+    if anno['dataset'] == 'nr3d':
+        caption = ' '.join(caption.replace('.', ' .').split())
+        caption = ' '.join(caption.replace(';', ' ; ').split())
+        caption = ' '.join(caption.replace('-', ' ').split())
+        caption = ' '.join(caption.replace('"', ' ').split())
+        caption = ' '.join(caption.replace('?', ' ').split())
+        caption = ' '.join(caption.replace("*", " ").split())
+        caption = ' '.join(caption.replace(':', ' ').split())
+        caption = ' '.join(caption.replace('$', ' ').split())
+        caption = ' '.join(caption.replace("#", " ").split())
+        caption = ' '.join(caption.replace("/", " / ").split())
+        caption = ' '.join(caption.replace("you're", "you are").split())
+        caption = ' '.join(caption.replace("isn't", "is not").split())
+        caption = ' '.join(caption.replace("thats", "that is").split())
+        caption = ' '.join(caption.replace("doesn't", "does not").split())
+        caption = ' '.join(caption.replace("doesnt", "does not").split())
+        caption = ' '.join(caption.replace("itis", "it is").split())
+        caption = ' '.join(caption.replace("left-hand", "left - hand").split())
+        caption = ' '.join(caption.replace("[", " [ ").split())
+        caption = ' '.join(caption.replace("]", " ] ").split())
+        caption = ' '.join(caption.replace("(", " ( ").split())
+        caption = ' '.join(caption.replace(")", " ) ").split())
+        caption = ' '.join(caption.replace("wheel-chair", "wheel - chair").split())
+        caption = ' '.join(caption.replace(";s", "is").split())
+        caption = ' '.join(caption.replace("tha=e", "the").split())
+        caption = ' '.join(caption.replace("it’s", "it is").split())
+        caption = ' '.join(caption.replace("’s", " is").split())
+        caption = ' '.join(caption.replace("isnt", "is not").split())
+        caption = ' '.join(caption.replace("Don't", "Do not").split())
+        caption = ' '.join(caption.replace("arent", "are not").split())
+        caption = ' '.join(caption.replace("cant", "can not").split())
+        caption = ' '.join(caption.replace("you’re", "you are").split())
+        caption = ' '.join(caption.replace('!', ' !').split())
+        caption = ' '.join(caption.replace('id the', ' , the').split())
+        caption = ' '.join(caption.replace('youre', 'you are').split())
+
+        caption = ' '.join(caption.replace("'", ' ').split())
+
+        if caption[0] == "'":
+            caption = caption[1:]
+        if caption[-1] == "'":
+            caption = caption[:-1]
+    
+    anno['utterance'] = caption
+
+    # text parsing
+    graph_node, graph_edge = sng_parser.parse(caption)
+
+    # NOTE If no node is parsed, add "this is an object ." at the beginning of the sentence
+    if (len(graph_node) < 1) or \
+        (len(graph_node) > 0 and graph_node[0]["node_id"] != 0):
+        caption = "This is an object . " + caption
+        anno['utterance'] = caption
+
+        # parse again
+        graph_node, graph_edge = sng_parser.parse(caption)
+
+    # node and edge
+    anno["graph_node"] = graph_node
+    anno["graph_edge"] = graph_edge
+
+    # auxi object
+    auxi_entity = None
+    for node in graph_node:
+        if (node["node_id"] != 0) and (node["node_type"] == "Object"):
+            auxi_entity = node
+            break
+    anno["auxi_entity"] = auxi_entity
+    
+    return anno
+
+def wrapped_Scene_graph_parse_worker(args):
+    return Scene_graph_parse_worker(*args)
+
+def Scene_graph_parse(annos):
+    print('Begin text decoupling......')
+    
+    mp_args = []
+    for anno in annos:
+        mp_args.append((
+            anno,
+        ))
+        pass
+    
+    with mp.get_context("spawn").Pool(mp.cpu_count()) as pool:
+        parsed_anno = list(
+            tqdm.tqdm(
+                pool.imap(
+                    wrapped_Scene_graph_parse_worker,
+                    mp_args
+                ),
+                total=len(mp_args)
+            )
+        )
+        pass
+        
+    anno = copy.deepcopy(parsed_anno)
+    print('End text decoupling!')
+    return anno

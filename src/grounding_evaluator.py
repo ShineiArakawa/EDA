@@ -128,8 +128,10 @@ class GroundingEvaluator:
             prefix (str): layer name
         """
         # NOTE Two Evaluation Ways: position alignment, semantic alignment
-        self.evaluate_bbox_by_pos_align(end_points, prefix)
+        outputs_to_return = self.evaluate_bbox_by_pos_align(end_points, prefix)
         self.evaluate_bbox_by_sem_align(end_points, prefix)
+        
+        return outputs_to_return
     
     # BRIEF position alignment
     def evaluate_bbox_by_pos_align(self, end_points, prefix):
@@ -159,6 +161,16 @@ class GroundingEvaluator:
         pred_size = end_points[f'{prefix}pred_size']  # (B,Q,3) (l,w,h)
         assert (pred_size < 0).sum() == 0
         pred_bbox = torch.cat([pred_center, pred_size], dim=-1) # ([B, 256, 6])
+        
+        # NOTE: 可視化のために保存すべきは
+        # pred_bbox
+        # ious
+        assert gt_bboxes.shape[1] == 1
+        outputs_to_return = {
+            "gt_bbox": gt_bboxes.squeeze(1).detach(),
+            "pred_bbox": torch.empty(pred_bbox.shape[0], 10, 6),
+            "ious": torch.empty(pred_bbox.shape[0], 10)
+        }
 
         # Highest scoring box -> iou
         for bid in range(len(positive_map)):
@@ -218,6 +230,9 @@ class GroundingEvaluator:
             )  # (obj, obj*10)
             ious = ious.reshape(top.size(0), top.size(0), top.size(1))
             ious = ious[torch.arange(len(ious)), torch.arange(len(ious))]   # ([1, 10])
+            
+            outputs_to_return["pred_bbox"][bid] = pbox
+            outputs_to_return["ious"][bid] = ious[0]
 
             # step Measure IoU>threshold, ious are (obj, 10)
             topks = self.topks
@@ -227,6 +242,8 @@ class GroundingEvaluator:
                     found = thresholded[:, :k].any(1)
                     self.dets[(prefix, t, k, 'bbs')] += found.sum().item()
                     self.gts[(prefix, t, k, 'bbs')] += len(thresholded)
+        
+        return outputs_to_return
 
     # BRIEF semantic alignment
     def evaluate_bbox_by_sem_align(self, end_points, prefix):
