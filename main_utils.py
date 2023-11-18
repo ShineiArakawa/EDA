@@ -31,6 +31,7 @@ from utils import record_tensorboard
 
 from tqdm import tqdm
 
+
 def parse_option():
     """Parse cmd arguments."""
     parser = argparse.ArgumentParser()
@@ -66,7 +67,8 @@ def parse_option():
     parser.add_argument('--use_color', action='store_true',
                         help='Use RGB color in input.')     # color
     parser.add_argument('--use_multiview', action='store_true')
-    parser.add_argument('--wo_obj_name', default='None')    # grounding without object name
+    # grounding without object name
+    parser.add_argument('--wo_obj_name', default='None')
     parser.add_argument('--butd', action='store_true')
     parser.add_argument('--butd_gt', action='store_true')
     parser.add_argument('--butd_cls', action='store_true')
@@ -105,7 +107,7 @@ def parse_option():
 
     # others
     parser.add_argument("--local_rank", type=int,
-                        help='local rank for DistributedDataParallel')  # note
+                        help='local rank for DistributedDataParallel', default=0)  # note
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5],
                         nargs='+', help='A list of AP IoU thresholds')
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')
@@ -113,7 +115,8 @@ def parse_option():
                         help="try to overfit few samples")
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('--eval_train', action='store_true')
-    parser.add_argument('--pp_checkpoint', default=None)    # pointnet checkpoint
+    # pointnet checkpoint
+    parser.add_argument('--pp_checkpoint', default=None)
     parser.add_argument('--reduce_lr', action='store_true')
 
     args, _ = parser.parse_known_args()
@@ -123,6 +126,8 @@ def parse_option():
     return args
 
 # BRIEF load checkpoint.
+
+
 def load_checkpoint(args, model, optimizer, scheduler):
     """Load from checkpoint."""
     print("=> loading checkpoint '{}'".format(args.checkpoint_path))
@@ -157,7 +162,7 @@ def save_checkpoint(args, epoch, model, optimizer, scheduler, save_cur=False):
             'scheduler': scheduler.state_dict(),
             'epoch': epoch
         }
-        
+
         spath = os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth')
         state['save_path'] = spath
         torch.save(state, spath)
@@ -173,7 +178,7 @@ class BaseTrainTester:
     def __init__(self, args):
         """Initialize."""
         name = args.log_dir.split('/')[-1]  # log_dir: './logs/eda', name: eda
-        
+
         # Create log dir
         args.log_dir = os.path.join(
             args.log_dir,
@@ -189,7 +194,8 @@ class BaseTrainTester:
         )
 
         # tensorboard
-        self.tensorboard = record_tensorboard.TensorBoard(args.log_dir, distributed_rank=dist.get_rank())
+        self.tensorboard = record_tensorboard.TensorBoard(
+            args.log_dir, distributed_rank=dist.get_rank())
 
         # Save config file and initialize tb writer
         if dist.get_rank() == 0:
@@ -206,8 +212,8 @@ class BaseTrainTester:
         test_dataset = None
         return train_dataset, test_dataset
 
-
     # BRIEF dataloader.
+
     def get_loaders(self, args):
         """Initialize data loaders."""
         def seed_worker(worker_id):
@@ -218,7 +224,7 @@ class BaseTrainTester:
 
         # Datasets
         train_dataset, test_dataset = self.get_datasets(args)
-        
+
         # Samplers and loaders
         g = torch.Generator()
         g.manual_seed(0)
@@ -230,7 +236,7 @@ class BaseTrainTester:
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=args.batch_size,
-                shuffle=False,      # TODO 
+                shuffle=False,      # TODO
                 num_workers=args.num_workers,
                 worker_init_fn=seed_worker,
                 pin_memory=True,
@@ -238,7 +244,7 @@ class BaseTrainTester:
                 drop_last=True,
                 generator=g
             )
-        
+
         test_sampler = DistributedSampler(test_dataset, shuffle=False)
         test_loader = DataLoader(
             test_dataset,
@@ -304,8 +310,8 @@ class BaseTrainTester:
                                 weight_decay=args.weight_decay)
         return optimizer
 
-
     # BRIEF main training/testing
+
     def main(self, args):
         """Run main training/testing pipeline."""
         # Get loaders
@@ -330,12 +336,13 @@ class BaseTrainTester:
             scheduler = get_scheduler(optimizer, len(train_loader), args)
         else:
             scheduler = None
-        
+
         # Move model to devices
         if torch.cuda.is_available():
             if torch.cuda.device_count() > 1:
                 # synBN
-                model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).cuda()
+                model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(
+                    model).cuda()
             else:
                 model = model.cuda()
 
@@ -349,7 +356,7 @@ class BaseTrainTester:
         if args.checkpoint_path:
             assert os.path.isfile(args.checkpoint_path)
             load_checkpoint(args, model, optimizer, scheduler)
-        
+
         # ##############################################
         # NOTE [eval-only] Just eval and end execution #
         # ##############################################
@@ -374,7 +381,7 @@ class BaseTrainTester:
                 criterion, set_criterion,
                 optimizer, scheduler, args
             )
-            
+
             # log
             self.logger.info(
                 'epoch {}, total time {:.2f}, '
@@ -389,7 +396,7 @@ class BaseTrainTester:
             if epoch % args.val_freq == 0:
                 if dist.get_rank() == 0:
                     save_checkpoint(args, epoch, model, optimizer, scheduler)
-                
+
                 # validate *
                 print("Test evaluation.......")
                 self.evaluate_one_epoch(
@@ -443,8 +450,8 @@ class BaseTrainTester:
                     stat_dict[key] += end_points[key].item()
         return stat_dict
 
-
     # BRIEF Training
+
     def train_one_epoch(self, epoch, train_loader, model,
                         criterion, set_criterion,
                         optimizer, scheduler, args):
@@ -485,7 +492,7 @@ class BaseTrainTester:
                     model.parameters(), args.clip_norm
                 )
                 stat_dict['grad_norm'] = grad_total_norm
-            
+
             optimizer.step()
             scheduler.step()
 
@@ -496,36 +503,41 @@ class BaseTrainTester:
             if (batch_idx + 1) % args.print_freq == 0:
                 # Terminal logs
                 self.logger.info(
-                    f'Train: [{epoch}][{batch_idx + 1}/{len(train_loader)}]  '  # Train: [30][2000/2432]
+                    # Train: [30][2000/2432]
+                    f'Train: [{epoch}][{batch_idx + 1}/{len(train_loader)}]  '
                 )
                 self.logger.info(''.join([
                     f'{key} {stat_dict[key] / (batch_idx + 1):.4f} \t'
                     for key in sorted(stat_dict.keys())
                     if 'loss' in key and 'proposal_' not in key
                     and 'last_' not in key and 'head_' not in key
-                ])) # loss，loss_bbox，loss_ce，loss_sem_align，loss_giou，query_points_generation_loss
+                ]))  # loss，loss_bbox，loss_ce，loss_sem_align，loss_giou，query_points_generation_loss
 
                 # # reset stat_dict
                 # for key in sorted(stat_dict.keys()):
                 #     stat_dict[key] = 0
-                
+
                 if dist.get_rank() == 0:
                     for key in self.tensorboard.item["train_loss"]:
-                        self.tensorboard.item["train_loss"][key] = stat_dict[key] / (batch_idx + 1)
-                    self.tensorboard.dump_tensorboard("train_loss", (epoch-1)*len(train_loader)+batch_idx+1)
+                        self.tensorboard.item["train_loss"][key] = stat_dict[key] / (
+                            batch_idx + 1)
+                    self.tensorboard.dump_tensorboard(
+                        "train_loss", (epoch-1)*len(train_loader)+batch_idx+1)
 
         # tensorboard
         if dist.get_rank() == 0:
             # loss
             for key in self.tensorboard.item["train_loss"]:
-                self.tensorboard.item["train_loss"][key] = stat_dict[key] / len(train_loader)
-            self.tensorboard.dump_tensorboard("train_loss", (epoch-1)*len(train_loader)+batch_idx+1)
+                self.tensorboard.item["train_loss"][key] = stat_dict[key] / \
+                    len(train_loader)
+            self.tensorboard.dump_tensorboard(
+                "train_loss", (epoch-1)*len(train_loader)+batch_idx+1)
             # lr
             self.tensorboard.item["train_lr"]["lr_base"] = optimizer.param_groups[0]['lr']
             self.tensorboard.item["train_lr"]["lr_pointnet"] = optimizer.param_groups[1]['lr']
             self.tensorboard.dump_tensorboard("train_lr", epoch)
 
-    # BRIEF eval 
+    # BRIEF eval
     @torch.no_grad()
     def _main_eval_branch(self, batch_idx, batch_data, test_loader, model,
                           stat_dict,

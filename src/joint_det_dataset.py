@@ -112,7 +112,7 @@ class Joint3DDataset(Dataset):
         # self.tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
         # 2) offline
         self.tokenizer = RobertaTokenizerFast.from_pretrained(
-            f'{self.data_path}roberta-base/',
+            os.path.abspath(f'{self.data_path}roberta-base/'),
             local_files_only=True
         )
 
