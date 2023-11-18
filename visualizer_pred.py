@@ -81,9 +81,9 @@ def main():
     )
 
     n_data = min(args.max_n_data, len(preds['utterances']))
+    index = list(range(n_data))
     if args.rand_sort:
         logger.info(f"Sorted data randomly")
-        index = list(range(n_data))
         random.seed(args.seed)
         random.shuffle(index)
         preds['gt_bbox'] = preds['gt_bbox'][index, :]
@@ -149,7 +149,7 @@ def main():
             pass
 
         updatemenus_button_opts.append(dict(
-            label=f"Prediction (i={i_data})",
+            label=f"Prediction (i={index[i_data]})",
             method="update",
             args=[{"visible": visibility}]
         ))

@@ -1,6 +1,7 @@
 #!/bin/bash
 
-python3 visualizer.py \
+# python3 visualizer.py \
+python3 visualizer_open3d.py \
     --num_decoder_layers=6 \
     --use_color \
     --weight_decay=0.0005 \

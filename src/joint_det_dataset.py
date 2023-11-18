@@ -3,7 +3,7 @@
 # Created: 05/21/2022
 # Author: Yanmin Wu
 # E-mail: wuyanminmax@gmail.com
-# https://github.com/yanmin-wu/EDA 
+# https://github.com/yanmin-wu/EDA
 # ------------------------------------------------------------------------
 # BEAUTY DETR
 # Copyright (c) 2022 Ayush Jain & Nikolaos Gkanatsios
@@ -12,6 +12,7 @@
 # ------------------------------------------------------------------------
 """Dataset and data loader."""
 
+import sng_parser
 import csv
 from collections import defaultdict
 import h5py
@@ -36,9 +37,9 @@ from src.visual_data_handlers import Scan
 from .scannet_classes import REL_ALIASES, VIEW_DEP_RELS
 
 # NOTE sng_parser
-import sys, os
+import sys
+import os
 sys.path.append(os.getcwd())
-import sng_parser
 
 NUM_CLASSES = 485
 DC = ScannetDatasetConfig(NUM_CLASSES)
@@ -82,7 +83,7 @@ class Joint3DDataset(Dataset):
         self.wo_obj_name = wo_obj_name
 
         self.mean_rgb = np.array([109.8, 97.2, 83.8]) / 256
-        
+
         # step 1. semantic label
         self.label_map = read_label_mapping(
             'data/meta_data/scannetv2-labels.combined.tsv',
@@ -98,7 +99,7 @@ class Joint3DDataset(Dataset):
             'data/meta_data/scannetv2-labels.combined.tsv',
             label_from='raw_category',
             label_to='nyu40class'
-        )   
+        )
 
         self.multiview_path = os.path.join(
             f'{self.data_path}/scanrefer_2d_feats',
@@ -110,26 +111,29 @@ class Joint3DDataset(Dataset):
         # # 1) online
         # self.tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
         # 2) offline
-        self.tokenizer = RobertaTokenizerFast.from_pretrained(f'{self.data_path}roberta-base/', local_files_only=True)
-        
+        self.tokenizer = RobertaTokenizerFast.from_pretrained(
+            f'{self.data_path}roberta-base/',
+            local_files_only=True
+        )
+
         if os.path.exists('data/cls_results.json'):
             with open('data/cls_results.json') as fid:
                 self.cls_results = json.load(fid)
 
         print('Loading %s files, take a breath!' % split)
-        
+
         # step 3. generate or load train/val_v3scans.pkl
         if not os.path.exists(f'{self.data_path}/{split}_v3scans.pkl'):
             save_data(f'{data_path}/{split}_v3scans.pkl', split, data_path)
         self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
         self.scans = list(self.scans)[0]
-        
+
         # step 4. load text dataset
         if self.split != 'train':
             self.annos = self.load_annos(test_dataset)
         else:
             self.annos = []
-            for dset, cnt in dataset_dict.items():  
+            for dset, cnt in dataset_dict.items():
                 if cnt > 0:
                     _annos = self.load_annos(dset)
                     self.annos += (_annos * cnt)
@@ -144,7 +148,7 @@ class Joint3DDataset(Dataset):
             'nr3d': self.load_nr3d_annos,
             'sr3d': self.load_sr3d_annos,
             'sr3d+': self.load_sr3dplus_annos,
-            'scanrefer': self.load_scanrefer_annos, # scanrefer
+            'scanrefer': self.load_scanrefer_annos,  # scanrefer
             'scannet': self.load_scannet_annos      # scannet detection augmentation
         }
         annos = loaders[dset]()
@@ -220,9 +224,8 @@ class Joint3DDataset(Dataset):
                     or split != 'test'
                 )
             ]
-        
-        annos = Scene_graph_parse(annos)
 
+        annos = Scene_graph_parse(annos)
 
         # Add distractor info
         for anno in annos:
@@ -240,8 +243,8 @@ class Joint3DDataset(Dataset):
 
         return annos
 
-    
     # BRIEF load ScanRefer
+
     def load_scanrefer_annos(self):
         """Load annotations of ScanRefer."""
         _path = self.data_path + 'ScanRefer/ScanRefer_filtered'
@@ -255,7 +258,7 @@ class Joint3DDataset(Dataset):
         if self.wo_obj_name != "None":
             with open(self.wo_obj_name) as f:
                 reader = json.load(f)
-        
+
         # STEP 1. load utterance
         annos = [
             {
@@ -265,8 +268,8 @@ class Joint3DDataset(Dataset):
                 'distractor_ids': [],
                 'utterance': ' '.join(anno['token']),
                 'target': ' '.join(str(anno['object_name']).split('_')),
-                'anchors': [],      
-                'anchor_ids': [],   
+                'anchors': [],
+                'anchor_ids': [],
                 'dataset': 'scanrefer'
             }
             for anno in reader
@@ -288,7 +291,7 @@ class Joint3DDataset(Dataset):
         #             + ' ' + anno['target'] + ' . '
         #             + ' . '.join(anno['utterance'].split(' . ')[1:])
         #         )
-        
+
         # STEP 3. Add distractor info
         scene2obj = defaultdict(list)
         sceneobj2used = defaultdict(list)
@@ -311,7 +314,7 @@ class Joint3DDataset(Dataset):
             if anno['target_id'] not in sceneobj2used[anno['scan_id']]:
                 sceneobj2used[anno['scan_id']].append(anno['target_id'])
                 scene2obj[anno['scan_id']].append(labels[anno['target_id']])
-        
+
         # STEP 4. Add unique-multi
         for anno in annos:
             if anno['scan_id'] not in list(self.scans.keys()):
@@ -331,8 +334,8 @@ class Joint3DDataset(Dataset):
             ).sum() == 1
         return annos
 
-
     # BRIEF scannet detection prompt.
+
     def load_scannet_annos(self):
         """Load annotations of scannet."""
         split = 'train' if self.split == 'train' else 'val'
@@ -370,7 +373,7 @@ class Joint3DDataset(Dataset):
                 if a not in {965, 977}
             ]
         return annos
-    
+
     # BRIEF smaple classes for detection prompt
     def _sample_classes(self, scan_id):
         """Sample classes for the scannet detection sentences."""
@@ -394,7 +397,7 @@ class Joint3DDataset(Dataset):
                 'other furniture'
             ]
         return ret
-    
+
     # BRIEF constract utterance for scannet
     def _create_scannet_utterance(self, sampled_classes):
         if self.split == 'train' and self.random_utt:
@@ -418,7 +421,7 @@ class Joint3DDataset(Dataset):
                 self.multiview_path, "r", libver="latest"
             )
         return self.multiview_data[pid][scan_id]
-    
+
     # BRIEF point cloud augmentation
     def _augment(self, pc, color, rotate):
         augmentations = {}
@@ -466,7 +469,7 @@ class Joint3DDataset(Dataset):
             color *= 0.98 + 0.04*np.random.random((len(color), 3))
             color -= self.mean_rgb
         return pc, color, augmentations
-    
+
     # BRIEF get point clouds
     def _get_pc(self, anno, scan):
         """Return a point cloud representation of current scene."""
@@ -517,14 +520,14 @@ class Joint3DDataset(Dataset):
             point_cloud = np.concatenate([point_cloud, multiview_data], 1)
 
         return point_cloud, augmentations, scan.color
-    
+
     # BRIEF get position label [scannet]
     def _get_token_positive_map(self, anno):
         """Return correspondence of boxes to tokens."""
         # Token start-end span in characters
         caption = ' '.join(anno['utterance'].replace(',', ' ,').split())
         caption = ' ' + caption + ' '
-        
+
         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
         if isinstance(anno['target'], list):
             cat_names = anno['target']
@@ -546,7 +549,7 @@ class Joint3DDataset(Dataset):
                 len_ = len(cat_name) + orig_start_span - start_span
                 while caption[len_ + start_span] != ' ':
                     len_ += 1
-            
+
             end_span = start_span + len_
             assert start_span > -1, caption
             assert end_span > 0, caption
@@ -567,17 +570,17 @@ class Joint3DDataset(Dataset):
         other_entity_positive_map = np.zeros((MAX_NUM_OBJ, 256))
         rel_positive_map = np.zeros((MAX_NUM_OBJ, 256))
         auxi_entity_positive_map = np.zeros((MAX_NUM_OBJ, 256))
-        
+
         # main object component
         gt_map = get_positive_map(tokenized, tokens_positive[:len(cat_names)])
         positive_map[:len(cat_names)] = gt_map
         return tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
             other_entity_positive_map, auxi_entity_positive_map, rel_positive_map
 
-
     #################################################
     # BRIEF Get text position label by text parsing #
     #################################################
+
     def _get_token_positive_map_by_parse(self, anno, auxi_box):
         caption = ' '.join(anno['utterance'].replace(',', ' ,').split())
 
@@ -593,8 +596,8 @@ class Joint3DDataset(Dataset):
         assert graph_node[0]['node_id'] == 0
         main_entity_target = graph_node[0]['target_char_span']
         main_entity_modify = graph_node[0]['mod_char_span']
-        main_entity_pron   = graph_node[0]['pron_char_span']
-        main_entity_rel   = graph_node[0]['rel_char_span']
+        main_entity_pron = graph_node[0]['pron_char_span']
+        main_entity_rel = graph_node[0]['rel_char_span']
 
         # other(auxi) object token
         other_target_char_span = np.zeros((MAX_NUM_OBJ, 2))
@@ -645,7 +648,7 @@ class Joint3DDataset(Dataset):
         gt_map_p = get_positive_map(tokenized, pron_char_span[:num_p])
         gt_map_o = get_positive_map(tokenized, other_target_char_span[:num_o])
         gt_map_r = get_positive_map(tokenized, rel_char_span[:num_r])
-        
+
         gt_map_t = gt_map_t.sum(axis=0)
         gt_map_m = gt_map_m.sum(axis=0)
         gt_map_p = gt_map_p.sum(axis=0)
@@ -655,9 +658,9 @@ class Joint3DDataset(Dataset):
         # NOTE text position label
         target_positive_map[:1] = gt_map_t          # main object
         modify_positive_map[:1] = gt_map_m          # attribute
-        pron_positive_map[:1]   = gt_map_p          # pron
+        pron_positive_map[:1] = gt_map_p          # pron
         other_entity_positive_map[:1] = gt_map_o    # auxi obj
-        rel_positive_map[:1]   = gt_map_r           # relation
+        rel_positive_map[:1] = gt_map_r           # relation
 
         # auxi
         auxi_entity_positive_map = np.zeros((MAX_NUM_OBJ, 256))
@@ -670,19 +673,20 @@ class Joint3DDataset(Dataset):
                 auxi_entity_char_span[a] = auxi
                 num_a = a+1
             # position label
-            gt_map_a = get_positive_map(tokenized, auxi_entity_char_span[:num_a])
+            gt_map_a = get_positive_map(
+                tokenized, auxi_entity_char_span[:num_a])
             gt_map_a = gt_map_a.sum(axis=0)
             auxi_entity_positive_map[:1] = gt_map_a
 
-            # note SR3D 
+            # note SR3D
             if anno['dataset'] == 'sr3d':
                 target_positive_map[1] = gt_map_a
 
         return target_char_span, target_positive_map, modify_positive_map, pron_positive_map, \
             other_entity_positive_map, auxi_entity_positive_map, rel_positive_map
 
-
     # BRIEF get GT Box.
+
     def _get_target_boxes(self, anno, scan):
         """Return gt boxes to detect."""
         bboxes = np.zeros((MAX_NUM_OBJ, 6))
@@ -699,7 +703,7 @@ class Joint3DDataset(Dataset):
         point_instance_label = -np.ones(len(scan.pc))
         for t, tid in enumerate(tids):
             point_instance_label[scan.three_d_objects[tid]['points']] = t
-        
+
         bboxes[:len(tids)] = np.stack([
             scan.get_object_bbox(tid).reshape(-1) for tid in tids
         ])
@@ -710,10 +714,10 @@ class Joint3DDataset(Dataset):
         if self.split == 'train' and self.augment:  # jitter boxes
             bboxes[:len(tids)] *= (0.95 + 0.1*np.random.random((len(tids), 6)))
         bboxes[len(tids):, :3] = 1000
-        
+
         box_label_mask = np.zeros(MAX_NUM_OBJ)
         box_label_mask[:len(tids)] = 1
-        
+
         return bboxes, box_label_mask, point_instance_label
 
     def _get_scene_objects(self, scan):
@@ -727,7 +731,7 @@ class Joint3DDataset(Dataset):
         keep = np.array([False] * MAX_NUM_OBJ)
         keep[:len(keep_)] = keep_
 
-        # Class ids 
+        # Class ids
         cid = np.array([
             DC.nyu40id2class[self.label_map[scan.get_object_instance_label(k)]]
             for k, kept in enumerate(keep) if kept
@@ -753,9 +757,9 @@ class Joint3DDataset(Dataset):
         # Which boxes we're interested for
         all_bbox_label_mask = keep
         return class_ids, all_bboxes, all_bbox_label_mask
-    
 
     # BRIEF Search for pseudo-labels of auxiliary objects [not used!]
+
     def _get_auxi_boxes(self, anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes):
         auxi_box = None
 
@@ -767,7 +771,7 @@ class Joint3DDataset(Dataset):
             if auxi_label_lemma in self.label_map:
                 if self.label_map[auxi_label_lemma] not in list((DC.nyu40id2class).keys()):
                     return auxi_box
-                
+
                 cls_id = DC.nyu40id2class[self.label_map[auxi_label_lemma]]
                 dis_min = 100
                 target_box = gt_bboxes[0]
@@ -777,7 +781,7 @@ class Joint3DDataset(Dataset):
                     if class_ids[idx] == cls_id:
                         dis = target_box[:3] - all_bboxes[idx][:3]
                         dis = np.sum(dis**2)
-                        
+
                         if dis < dis_min:
                             dis_min = dis
                             auxi_box = all_bboxes[idx]
@@ -835,7 +839,7 @@ class Joint3DDataset(Dataset):
             all_det_pts += augmentations['shift']
             all_det_pts *= augmentations['scale']
             all_detected_bboxes = points2box(all_det_pts.reshape(-1, 8, 3))
-        
+
         if self.augment_det and self.split == 'train':
             min_ = all_detected_bboxes.min(0)
             max_ = all_detected_bboxes.max(0)
@@ -873,7 +877,7 @@ class Joint3DDataset(Dataset):
             self.random_utt = self.joint_det and np.random.random() > 0.5
             sampled_classes = self._sample_classes(anno['scan_id'])
             utterance = self._create_scannet_utterance(sampled_classes)
-            
+
             if not self.random_utt:  # detection18 phrase
                 anno['target_id'] = np.where(np.array([
                     self.label_map18[
@@ -892,7 +896,7 @@ class Joint3DDataset(Dataset):
                     ]]] in sampled_classes
                     for ind in range(len(scan.three_d_objects))
                 ])[:MAX_NUM_OBJ])[0].tolist()
-            
+
             # Target names
             if not self.random_utt:
                 anno['target'] = [
@@ -927,23 +931,26 @@ class Joint3DDataset(Dataset):
         ) = self._get_scene_objects(scan)
 
         # not used
-        auxi_box = self._get_auxi_boxes(anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
+        auxi_box = self._get_auxi_boxes(
+            anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
 
         ##########################
         # STEP Get text position #
         ##########################
         if anno['dataset'] == 'scannet':
             tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
-                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(anno)
+                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(
+                    anno)
         else:
             # note text parsing
             tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
-                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map_by_parse(anno, auxi_box)
+                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map_by_parse(
+                    anno, auxi_box)
         if auxi_box is None:
             auxi_box = np.zeros((1, 6))
         else:
             auxi_box = np.expand_dims(auxi_box, axis=0)
-        
+
         # step groupfree Detected boxes
         (
             all_detected_bboxes, all_detected_bbox_label_mask,
@@ -994,13 +1001,18 @@ class Joint3DDataset(Dataset):
             "language_dataset": language_dataset,
             "tokens_positive": tokens_positive.astype(np.int64),
             # NOTE text component position label
-            "positive_map": positive_map.astype(np.float32),                # main object
-            "modify_positive_map": modify_positive_map.astype(np.float32),  # modift(attribute)
-            "pron_positive_map": pron_positive_map.astype(np.float32),      # pron
-            "other_entity_map": other_entity_map.astype(np.float32),        # other(auxi) object
-            "rel_positive_map": rel_positive_map.astype(np.float32),        # relation
+            # main object
+            "positive_map": positive_map.astype(np.float32),
+            # modift(attribute)
+            "modify_positive_map": modify_positive_map.astype(np.float32),
+            # pron
+            "pron_positive_map": pron_positive_map.astype(np.float32),
+            # other(auxi) object
+            "other_entity_map": other_entity_map.astype(np.float32),
+            # relation
+            "rel_positive_map": rel_positive_map.astype(np.float32),
             "auxi_entity_positive_map": auxi_entity_positive_map.astype(np.float32),
-            "auxi_box":auxi_box.astype(np.float32),
+            "auxi_box": auxi_box.astype(np.float32),
             "relation": (
                 self._find_rel(anno['utterance'])
                 if anno['dataset'].startswith('sr3d')
@@ -1051,7 +1063,7 @@ class Joint3DDataset(Dataset):
         ]
         words = set(utterance.split())
         return any(rel in words for rel in rels)
-    
+
     @staticmethod
     def _find_rel(utterance):
         utterance = ' ' + utterance.replace(',', ' ,') + ' '
@@ -1062,7 +1074,7 @@ class Joint3DDataset(Dataset):
                 relation = REL_ALIASES[rel]
                 break
         return relation
-    
+
     @staticmethod
     def _augment_nr3d(utterance):
         """Check whether to augment based on nr3d utterance."""
@@ -1143,14 +1155,17 @@ class Joint3DDataset(Dataset):
             }),
             "utterance": wandb.Html(anno['utterance']),
         })
-    
+
     def __len__(self):
         """Return number of utterances."""
         return len(self.annos)
 
 # BRIEF Construct position label(map)
+
+
 def get_positive_map(tokenized, tokens_positive):
-    positive_map = torch.zeros((len(tokens_positive), 256), dtype=torch.float)  # ([positive], 256])
+    # ([positive], 256])
+    positive_map = torch.zeros((len(tokens_positive), 256), dtype=torch.float)
     for j, tok_list in enumerate(tokens_positive):
         (beg, end) = tok_list
         beg = int(beg)
@@ -1217,19 +1232,28 @@ def rot_z(pc, theta):
         pc.T
     ).T
 
+
 def box2points(box):
     """Convert box center/hwd coordinates to vertices (8x3)."""
     x_min, y_min, z_min = (box[:, :3] - (box[:, 3:] / 2)).transpose(1, 0)
     x_max, y_max, z_max = (box[:, :3] + (box[:, 3:] / 2)).transpose(1, 0)
     return np.stack((
-        np.concatenate((x_min[:, None], y_min[:, None], z_min[:, None]), 1), # 0
-        np.concatenate((x_min[:, None], y_max[:, None], z_min[:, None]), 1), # 1
-        np.concatenate((x_max[:, None], y_min[:, None], z_min[:, None]), 1), # 2
-        np.concatenate((x_max[:, None], y_max[:, None], z_min[:, None]), 1), # 3
-        np.concatenate((x_min[:, None], y_min[:, None], z_max[:, None]), 1), # 4
-        np.concatenate((x_min[:, None], y_max[:, None], z_max[:, None]), 1), # 5
-        np.concatenate((x_max[:, None], y_min[:, None], z_max[:, None]), 1), # 6
-        np.concatenate((x_max[:, None], y_max[:, None], z_max[:, None]), 1)  # 7
+        np.concatenate(
+            (x_min[:, None], y_min[:, None], z_min[:, None]), 1),  # 0
+        np.concatenate(
+            (x_min[:, None], y_max[:, None], z_min[:, None]), 1),  # 1
+        np.concatenate(
+            (x_max[:, None], y_min[:, None], z_min[:, None]), 1),  # 2
+        np.concatenate(
+            (x_max[:, None], y_max[:, None], z_min[:, None]), 1),  # 3
+        np.concatenate(
+            (x_min[:, None], y_min[:, None], z_max[:, None]), 1),  # 4
+        np.concatenate(
+            (x_min[:, None], y_max[:, None], z_max[:, None]), 1),  # 5
+        np.concatenate(
+            (x_max[:, None], y_min[:, None], z_max[:, None]), 1),  # 6
+        np.concatenate(
+            (x_max[:, None], y_max[:, None], z_max[:, None]), 1)  # 7
     ), axis=1)
 
 
@@ -1241,6 +1265,8 @@ def points2box(box):
     ), axis=1)
 
 # BRIEF load scannet
+
+
 def scannet_loader(iter_obj):
     """Load the scans in memory, helper function."""
     scan_id, scan_path = iter_obj
@@ -1248,6 +1274,8 @@ def scannet_loader(iter_obj):
     return Scan(scan_id, scan_path, True)
 
 # BRIEF Save all scans to pickle.
+
+
 def save_data(filename, split, data_path):
     """Save all scans to pickle."""
     import multiprocessing as mp
@@ -1290,6 +1318,8 @@ def pickle_data(file_name, *args):
     out_file.close()
 
 # BRIEF read from pkl
+
+
 def unpickle_data(file_name, python2_to_3=False):
     """Restore data previously saved with pickle_data()."""
     in_file = open(file_name, 'rb')
@@ -1323,13 +1353,14 @@ def Scene_graph_parse_old(annos):
         caption = ' '.join(caption.replace("8-hole", "8 - hole").split())
         caption = ' '.join(caption.replace("7-shaped", "7 - shaped").split())
         caption = ' '.join(caption.replace("2-door", "2 - door").split())
-        caption = ' '.join(caption.replace("3-compartment", "3 - compartment").split())
+        caption = ' '.join(caption.replace(
+            "3-compartment", "3 - compartment").split())
         caption = ' '.join(caption.replace("computer/", "computer /").split())
         caption = ' '.join(caption.replace("3-tier", "3 - tier").split())
         caption = ' '.join(caption.replace("3-seater", "3 - seater").split())
         caption = ' '.join(caption.replace("4-seat", "4 - seat").split())
         caption = ' '.join(caption.replace("theses", "these").split())
-        
+
         # some error or typo in NR3D.
         if anno['dataset'] == 'nr3d':
             caption = ' '.join(caption.replace('.', ' .').split())
@@ -1348,12 +1379,14 @@ def Scene_graph_parse_old(annos):
             caption = ' '.join(caption.replace("doesn't", "does not").split())
             caption = ' '.join(caption.replace("doesnt", "does not").split())
             caption = ' '.join(caption.replace("itis", "it is").split())
-            caption = ' '.join(caption.replace("left-hand", "left - hand").split())
+            caption = ' '.join(caption.replace(
+                "left-hand", "left - hand").split())
             caption = ' '.join(caption.replace("[", " [ ").split())
             caption = ' '.join(caption.replace("]", " ] ").split())
             caption = ' '.join(caption.replace("(", " ( ").split())
             caption = ' '.join(caption.replace(")", " ) ").split())
-            caption = ' '.join(caption.replace("wheel-chair", "wheel - chair").split())
+            caption = ' '.join(caption.replace(
+                "wheel-chair", "wheel - chair").split())
             caption = ' '.join(caption.replace(";s", "is").split())
             caption = ' '.join(caption.replace("tha=e", "the").split())
             caption = ' '.join(caption.replace("it’s", "it is").split())
@@ -1373,7 +1406,7 @@ def Scene_graph_parse_old(annos):
                 caption = caption[1:]
             if caption[-1] == "'":
                 caption = caption[:-1]
-        
+
         anno['utterance'] = caption
 
         # text parsing
@@ -1381,7 +1414,7 @@ def Scene_graph_parse_old(annos):
 
         # NOTE If no node is parsed, add "this is an object ." at the beginning of the sentence
         if (len(graph_node) < 1) or \
-            (len(graph_node) > 0 and graph_node[0]["node_id"] != 0):
+                (len(graph_node) > 0 and graph_node[0]["node_id"] != 0):
             caption = "This is an object . " + caption
             anno['utterance'] = caption
 
@@ -1399,10 +1432,10 @@ def Scene_graph_parse_old(annos):
                 auxi_entity = node
                 break
         anno["auxi_entity"] = auxi_entity
-    
+
     print('End text decoupling!')
-    
-    
+
+
 #########################
 # BRIEF Text decoupling #
 #########################
@@ -1419,13 +1452,14 @@ def Scene_graph_parse_worker(anno):
     caption = ' '.join(caption.replace("8-hole", "8 - hole").split())
     caption = ' '.join(caption.replace("7-shaped", "7 - shaped").split())
     caption = ' '.join(caption.replace("2-door", "2 - door").split())
-    caption = ' '.join(caption.replace("3-compartment", "3 - compartment").split())
+    caption = ' '.join(caption.replace(
+        "3-compartment", "3 - compartment").split())
     caption = ' '.join(caption.replace("computer/", "computer /").split())
     caption = ' '.join(caption.replace("3-tier", "3 - tier").split())
     caption = ' '.join(caption.replace("3-seater", "3 - seater").split())
     caption = ' '.join(caption.replace("4-seat", "4 - seat").split())
     caption = ' '.join(caption.replace("theses", "these").split())
-    
+
     # some error or typo in NR3D.
     if anno['dataset'] == 'nr3d':
         caption = ' '.join(caption.replace('.', ' .').split())
@@ -1449,7 +1483,8 @@ def Scene_graph_parse_worker(anno):
         caption = ' '.join(caption.replace("]", " ] ").split())
         caption = ' '.join(caption.replace("(", " ( ").split())
         caption = ' '.join(caption.replace(")", " ) ").split())
-        caption = ' '.join(caption.replace("wheel-chair", "wheel - chair").split())
+        caption = ' '.join(caption.replace(
+            "wheel-chair", "wheel - chair").split())
         caption = ' '.join(caption.replace(";s", "is").split())
         caption = ' '.join(caption.replace("tha=e", "the").split())
         caption = ' '.join(caption.replace("it’s", "it is").split())
@@ -1469,7 +1504,7 @@ def Scene_graph_parse_worker(anno):
             caption = caption[1:]
         if caption[-1] == "'":
             caption = caption[:-1]
-    
+
     anno['utterance'] = caption
 
     # text parsing
@@ -1477,7 +1512,7 @@ def Scene_graph_parse_worker(anno):
 
     # NOTE If no node is parsed, add "this is an object ." at the beginning of the sentence
     if (len(graph_node) < 1) or \
-        (len(graph_node) > 0 and graph_node[0]["node_id"] != 0):
+            (len(graph_node) > 0 and graph_node[0]["node_id"] != 0):
         caption = "This is an object . " + caption
         anno['utterance'] = caption
 
@@ -1495,22 +1530,24 @@ def Scene_graph_parse_worker(anno):
             auxi_entity = node
             break
     anno["auxi_entity"] = auxi_entity
-    
+
     return anno
+
 
 def wrapped_Scene_graph_parse_worker(args):
     return Scene_graph_parse_worker(*args)
 
+
 def Scene_graph_parse(annos):
     print('Begin text decoupling......')
-    
+
     mp_args = []
     for anno in annos:
         mp_args.append((
             anno,
         ))
         pass
-    
+
     with mp.get_context("spawn").Pool(mp.cpu_count()) as pool:
         parsed_anno = list(
             tqdm.tqdm(
@@ -1522,7 +1559,7 @@ def Scene_graph_parse(annos):
             )
         )
         pass
-        
+
     anno = copy.deepcopy(parsed_anno)
     print('End text decoupling!')
     return anno
