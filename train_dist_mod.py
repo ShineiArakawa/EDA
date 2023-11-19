@@ -40,7 +40,7 @@ class TrainTester(BaseTrainTester):
 
     # BRIEF Initialize dataset.
     @staticmethod
-    def get_datasets(args):
+    def get_datasets(args, mp_method: str = "spawn"):
         """Initialize datasets."""
 
         dataset_dict = {}  # dict to use multiple datasets
@@ -65,7 +65,8 @@ class TrainTester(BaseTrainTester):
                 butd=args.butd,
                 butd_gt=args.butd_gt,
                 butd_cls=args.butd_cls,
-                augment_det=args.augment_det
+                augment_det=args.augment_det,
+                mp_method=mp_method
             )
 
         test_dataset = Joint3DDataset(
@@ -165,19 +166,19 @@ class TrainTester(BaseTrainTester):
 
         # NOTE Main eval branch
         test_loader = tqdm(test_loader)
-        
+
         predictions = {
             prefix: {
-                "gt_bbox":[],
-                "pred_bbox":[],
-                "ious":[],
-                "point_cloud":[],
-                "orig_color":[],
-                "utterances":[],
+                "gt_bbox": [],
+                "pred_bbox": [],
+                "ious": [],
+                "point_cloud": [],
+                "orig_color": [],
+                "utterances": [],
                 "target_name": [],
             } for prefix in prefixes
         } if args.preds_file else None
-        
+
         for batch_idx, batch_data in enumerate(test_loader):
             # note forward and compute loss
             stat_dict, end_points = self._main_eval_branch(
@@ -192,15 +193,22 @@ class TrainTester(BaseTrainTester):
 
                     # evaluation
                     outputs_to_return = evaluator.evaluate(end_points, prefix)
-                    
+
                     if dist.get_rank() == 0 and predictions:
-                        predictions[prefix]["gt_bbox"].append(outputs_to_return["gt_bbox"].detach().cpu())
-                        predictions[prefix]["pred_bbox"].append(outputs_to_return["pred_bbox"].detach().cpu())
-                        predictions[prefix]["ious"].append(outputs_to_return["ious"].detach().cpu())
-                        predictions[prefix]["point_cloud"].append(batch_data["point_clouds"].detach().cpu())
-                        predictions[prefix]["orig_color"].append(batch_data["og_color"].detach().cpu())
-                        predictions[prefix]["utterances"].append(batch_data["utterances"])
-                        predictions[prefix]["target_name"].append(batch_data["target_name"])
+                        predictions[prefix]["gt_bbox"].append(
+                            outputs_to_return["gt_bbox"].detach().cpu())
+                        predictions[prefix]["pred_bbox"].append(
+                            outputs_to_return["pred_bbox"].detach().cpu())
+                        predictions[prefix]["ious"].append(
+                            outputs_to_return["ious"].detach().cpu())
+                        predictions[prefix]["point_cloud"].append(
+                            batch_data["point_clouds"].detach().cpu())
+                        predictions[prefix]["orig_color"].append(
+                            batch_data["og_color"].detach().cpu())
+                        predictions[prefix]["utterances"].append(
+                            batch_data["utterances"])
+                        predictions[prefix]["target_name"].append(
+                            batch_data["target_name"])
                         pass
 
         evaluator.synchronize_between_processes()
@@ -227,7 +235,7 @@ class TrainTester(BaseTrainTester):
                 self.tensorboard.dump_tensorboard("val_loss", epoch)
 
                 evaluator.print_stats()
-                
+
                 # Save predictions
                 if predictions:
                     # Collate
@@ -236,14 +244,16 @@ class TrainTester(BaseTrainTester):
                             n_data = len(predictions[prefix][data_key])
                             if n_data == 0:
                                 continue
-                            
+
                             if isinstance(predictions[prefix][data_key][0], torch.Tensor):
-                                predictions[prefix][data_key] = torch.cat(predictions[prefix][data_key], dim=0)
+                                predictions[prefix][data_key] = torch.cat(
+                                    predictions[prefix][data_key], dim=0)
                             elif isinstance(predictions[prefix][data_key][0], list):
-                                predictions[prefix][data_key] = sum(predictions[prefix][data_key], [])
+                                predictions[prefix][data_key] = sum(
+                                    predictions[prefix][data_key], [])
                             pass
                         pass
-                    
+
                     # Save
                     preds_file = os.path.abspath(args.preds_file)
                     os.makedirs(os.path.dirname(preds_file), exist_ok=True)

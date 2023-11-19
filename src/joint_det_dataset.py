@@ -57,7 +57,8 @@ class Joint3DDataset(Dataset):
                  use_color=False, use_height=False, use_multiview=False,
                  detect_intermediate=False,
                  butd=False, butd_gt=False, butd_cls=False, augment_det=False,
-                 wo_obj_name="None"):
+                 wo_obj_name="None",
+                 mp_method: str = "spawn"):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
         self.test_dataset = test_dataset
@@ -81,6 +82,7 @@ class Joint3DDataset(Dataset):
         )
         self.augment_det = augment_det
         self.wo_obj_name = wo_obj_name
+        self.mp_method = mp_method
 
         self.mean_rgb = np.array([109.8, 97.2, 83.8]) / 256
 
@@ -189,7 +191,7 @@ class Joint3DDataset(Dataset):
             ]
 
             # text decoupling
-            annos = Scene_graph_parse(annos)
+            annos = Scene_graph_parse(annos, self.mp_method)
 
         return annos
 
@@ -225,7 +227,7 @@ class Joint3DDataset(Dataset):
                 )
             ]
 
-        annos = Scene_graph_parse(annos)
+        annos = Scene_graph_parse(annos, self.mp_method)
 
         # Add distractor info
         for anno in annos:
@@ -279,7 +281,7 @@ class Joint3DDataset(Dataset):
         ###########################
         # STEP 2. text decoupling #
         ###########################
-        annos = Scene_graph_parse(annos)
+        annos = Scene_graph_parse(annos, self.mp_method)
 
         # # NOTE BUTD-DETR unreasonable approach, add GT object name
         # num = 0
@@ -1538,7 +1540,7 @@ def wrapped_Scene_graph_parse_worker(args):
     return Scene_graph_parse_worker(*args)
 
 
-def Scene_graph_parse(annos):
+def Scene_graph_parse(annos, mp_method: str = "spawn"):
     print('Begin text decoupling......')
 
     mp_args = []
@@ -1548,7 +1550,7 @@ def Scene_graph_parse(annos):
         ))
         pass
 
-    with mp.get_context("spawn").Pool(mp.cpu_count()) as pool:
+    with mp.get_context(mp_method).Pool(mp.cpu_count()) as pool:
         parsed_anno = list(
             tqdm.tqdm(
                 pool.imap(

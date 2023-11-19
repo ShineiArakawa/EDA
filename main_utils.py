@@ -118,7 +118,7 @@ def parse_option():
     # pointnet checkpoint
     parser.add_argument('--pp_checkpoint', default=None)
     parser.add_argument('--reduce_lr', action='store_true')
-    parser.add_argument('--pred_file', type=str, default=None)
+    parser.add_argument('--preds_file', type=str, default=None)
 
     args, _ = parser.parse_known_args()
 
@@ -138,6 +138,7 @@ def load_checkpoint(args, model, optimizer, scheduler):
         args.start_epoch = int(checkpoint['epoch']) + 1
     except Exception:
         args.start_epoch = 0
+
     model.load_state_dict(checkpoint['model'], strict=True)
     if not args.eval and not args.reduce_lr:
         optimizer.load_state_dict(checkpoint['optimizer'])
