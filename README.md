@@ -9,7 +9,7 @@ This repo is the official implementation of "**EDA: Explicit Text-Decoupling and
 </p>
 </figure>
 
-Add some visualizers (on a whole dataset, a whole predictions or interactive chats).
+Great thanks to this repo, added some visualizers (on a whole dataset, a whole predictions or interactive chats).
 
 ## 0. Installation
 
