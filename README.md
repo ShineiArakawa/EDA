@@ -9,6 +9,8 @@ This repo is the official implementation of "**EDA: Explicit Text-Decoupling and
 </p>
 </figure>
 
+Great thanks to this repo, added some visualizers (on a whole dataset, a whole predictions or interactive chats).
+
 ## 0. Installation
 
 + **(1)** Install environment with `environment.yml` file:
