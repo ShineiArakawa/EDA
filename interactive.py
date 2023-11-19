@@ -25,7 +25,7 @@ st.set_page_config(
 
 USER_NAME = "user"
 DEFAULT_POINT_CLOUD_ID = 0
-PLOTLY_PANEL_HEIGHT = 800
+PLOTLY_PANEL_HEIGHT = 900
 PLOTLY_COLORS = cycle([
     '#1f77b4',  # muted blue
     '#ff7f0e',  # safety orange
@@ -38,6 +38,12 @@ PLOTLY_COLORS = cycle([
     '#bcbd22',  # curry yellow-green
     '#17becf'   # blue-teal
 ])
+DEFAULT_PLOTLY_MARKER_SIZE = 1
+PLOTLY_MAX_MARKER_SIZE = 10
+PLOTLY_MARKER_SYMBOLS = [
+    "circle",
+    "square"
+]
 
 
 def update_figure():
@@ -52,7 +58,10 @@ def update_figure():
                 z=st.session_state.current_data["point_clouds"][:, 2],
                 mode='markers',
                 marker=dict(
-                    size=1, color=st.session_state.current_data["og_color"]),
+                    size=st.session_state.marker_size,
+                    color=st.session_state.current_data["og_color"],
+                    symbol=st.session_state.marker_symbol
+                ),
                 name=f"Scene"
             )
         )
@@ -88,17 +97,19 @@ def main():
 
     if "model" not in st.session_state:
         with st.spinner("Loading pretrain model ..."):
-            os.environ["RANK"] = "0"
-            os.environ["WORLD_SIZE"] = "1"
-            os.environ["MASTER_ADDR"] = "localhost"
-            os.environ["MASTER_PORT"] = "1111"
+            if not torch.distributed.is_initialized():
+                os.environ["RANK"] = "0"
+                os.environ["WORLD_SIZE"] = "1"
+                os.environ["MASTER_ADDR"] = "localhost"
+                os.environ["MASTER_PORT"] = "2222"
 
-            torch.cuda.set_device(args.local_rank)
-            torch.distributed.init_process_group(
-                backend='nccl',
-                init_method='env://',
-                timeout=datetime.timedelta(seconds=5400)
-            )
+                torch.cuda.set_device(args.local_rank)
+                torch.distributed.init_process_group(
+                    backend='nccl',
+                    init_method='env://',
+                    timeout=datetime.timedelta(seconds=5400)
+                )
+                pass
 
             model = TrainTester.get_model(args)
 
@@ -128,6 +139,14 @@ def main():
             _, dataset = TrainTester.get_datasets(args, "fork")
             st.session_state.dataset = dataset
             pass
+        pass
+
+    if "marker_symbol" not in st.session_state:
+        st.session_state.marker_symbol = PLOTLY_MARKER_SYMBOLS[0]
+        pass
+
+    if "marker_size" not in st.session_state:
+        st.session_state.marker_size = DEFAULT_PLOTLY_MARKER_SIZE
         pass
 
     if "point_cloud_id" not in st.session_state:
@@ -166,6 +185,23 @@ def main():
             st.session_state.current_data = st.session_state.dataset[st.session_state.point_cloud_id]
 
             st.session_state.bbox_coords = None
+        pass
+
+    if marker_symbol := st.sidebar.selectbox(
+        label="Marker Type",
+        options=PLOTLY_MARKER_SYMBOLS
+    ):
+        st.session_state.marker_symbol = marker_symbol
+        pass
+
+    if marker_size := st.sidebar.slider(
+        label="Marker Size",
+        min_value=1,
+        max_value=PLOTLY_MAX_MARKER_SIZE,
+        step=1,
+        value=st.session_state.marker_size
+    ):
+        st.session_state.marker_size = int(marker_size)
         pass
 
     if st.sidebar.button("Clear history"):
